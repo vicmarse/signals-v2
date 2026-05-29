@@ -7,6 +7,8 @@ export type Recipient = {
   gradient: string;
   signals: number;
   connection: string;
+  isGroup?: boolean;
+  members?: string[];
 };
 
 export type Signal = {
@@ -16,11 +18,23 @@ export type Signal = {
   tone: string;
   time: string;
   color: string;
-  kind: "instant" | "nightly support";
+  kind?: "instant" | "daily";
   date: string;
 };
 
 export const recipients: Recipient[] = [
+  {
+    id: "friends-family",
+    name: "Friends & Family",
+    relationship: "care group",
+    aura: "A shared circle for one signal sent to everyone",
+    initials: "FF",
+    gradient: "from-[#ffe4c7] via-[#ffcbdc] to-[#8f79d5]",
+    signals: 31,
+    connection: "group of 6 people",
+    isGroup: true,
+    members: ["Jen", "Mira", "Jo", "Ana", "Javi", "Juanin"],
+  },
   {
     id: "mira",
     name: "Mira",
@@ -30,6 +44,18 @@ export const recipients: Recipient[] = [
     gradient: "from-[#ffd6e8] via-[#f4d9ff] to-[#d6e5ff]",
     signals: 18,
     connection: "studio friend",
+  },
+  {
+    id: "brionx",
+    name: "Brionx",
+    relationship: "build group",
+    aura: "A focused crew for brave work and clean launches",
+    initials: "BX",
+    gradient: "from-[#d9fff3] via-[#d7e9ff] to-[#9f86df]",
+    signals: 16,
+    connection: "group of 7 people",
+    isGroup: true,
+    members: ["Edu", "Laura", "Mateo", "Ana", "Patri", "Victor", "Julia"],
   },
   {
     id: "jo",
@@ -74,12 +100,12 @@ export const recipients: Recipient[] = [
   {
     id: "edu",
     name: "Edu",
-    relationship: "old friend",
+    relationship: "side kick",
     aura: "Needs courage for a clean start",
     initials: "ED",
     gradient: "from-[#fff0c9] via-[#ffd6df] to-[#d8d2ff]",
     signals: 7,
-    connection: "old friend",
+    connection: "side kick",
   },
   {
     id: "mariuska",
@@ -148,13 +174,22 @@ export const initialSignals: Signal[] = [
     date: "Today",
   },
   {
+    id: "s6",
+    intention: "daily warmth for the whole circle",
+    recipient: "Friends & Family",
+    tone: "shared glow",
+    time: "09:00",
+    color: "from-[#ffe4c7] to-[#8f79d5]",
+    kind: "daily",
+    date: "Today",
+  },
+  {
     id: "s2",
     intention: "a little steadiness for the morning",
     recipient: "Mira",
     tone: "lavender hush",
     time: "23:00",
     color: "from-[#eee2ff] to-[#ffe9cf]",
-    kind: "nightly support",
     date: "Today",
   },
   {
@@ -174,7 +209,6 @@ export const initialSignals: Signal[] = [
     tone: "moon calm",
     time: "23:00",
     color: "from-[#171642] to-[#ffd9f0]",
-    kind: "nightly support",
     date: "May 18",
   },
   {
@@ -186,6 +220,46 @@ export const initialSignals: Signal[] = [
     color: "from-[#ffd4e4] to-[#d8ccff]",
     kind: "instant",
     date: "May 18",
+  },
+  {
+    id: "s7",
+    intention: "keep the room warm while you ship",
+    recipient: "Brionx",
+    tone: "team glow",
+    time: "16:10",
+    color: "from-[#d9fff3] to-[#9f86df]",
+    kind: "daily",
+    date: "May 17",
+  },
+  {
+    id: "s8",
+    intention: "a quiet yes for the hard part",
+    recipient: "Edu",
+    tone: "steady current",
+    time: "12:32",
+    color: "from-[#fff0c9] to-[#d8d2ff]",
+    kind: "instant",
+    date: "May 16",
+  },
+  {
+    id: "s9",
+    intention: "you are allowed to move slowly",
+    recipient: "Mariuska",
+    tone: "soft anchor",
+    time: "21:08",
+    color: "from-[#e0fff6] to-[#eee0ff]",
+    kind: "instant",
+    date: "May 15",
+  },
+  {
+    id: "s10",
+    intention: "one clean breath before the call",
+    recipient: "Javi",
+    tone: "light luck",
+    time: "09:44",
+    color: "from-[#f7ffd1] to-[#d9d1ff]",
+    kind: "instant",
+    date: "May 14",
   },
 ];
 
