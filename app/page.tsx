@@ -1,10 +1,12 @@
 "use client";
 
 import Image from "next/image";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
   ArrowRight,
+  Activity,
   Cake,
   Check,
   ChevronRight,
@@ -19,7 +21,7 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { BottomNav } from "@/components/BottomNav";
 import { FloatingParticles } from "@/components/FloatingParticles";
 import { GlassCard } from "@/components/GlassCard";
@@ -33,13 +35,32 @@ import {
   type Signal,
 } from "@/data/mock";
 
-type Screen = "feed" | "signals" | "send" | "recipients" | "launch" | "sent" | "people" | "profile" | "person";
+type Screen = "feed" | "signals" | "send" | "recipients" | "launch" | "sent" | "people" | "profile" | "person" | "add-person" | "create-group";
 type NavTab = "feed" | "signals" | "send" | "people" | "profile";
 
 const nowLabel = "Today, 20:45";
 const profileRecipient = recipients.find((recipient) => recipient.id === "jen") ?? recipients[0];
-const groupRecipient = recipients.find((recipient) => recipient.isGroup) ?? recipients[0];
 const mostConnectedName = "Jen";
+const personGradients = [
+  "from-[#ffe1f1] via-[#f4d7ff] to-[#d7f0ff]",
+  "from-[#fff1bf] via-[#ffcbd7] to-[#cfc7ff]",
+  "from-[#d9fff3] via-[#ffe2f0] to-[#f8e0ff]",
+];
+const groupGradient = "from-[#d9fff3] via-[#d7e9ff] to-[#9f86df]";
+const signalPulsePalettes = [
+  ["#f6fffb", "#1fd0c8", "#3d6dff"],
+  ["#fff5c8", "#ffad42", "#714cff"],
+  ["#f6ffdb", "#8cf05d", "#18a4ff"],
+  ["#f1ecff", "#b36cff", "#39d6ff"],
+  ["#fff0df", "#ff6e5f", "#594aff"],
+  ["#eaffff", "#3dc7ff", "#274fd3"],
+  ["#fffbd6", "#f2db39", "#ff7a35"],
+  ["#edfff5", "#55dfae", "#9864ff"],
+  ["#f3fbff", "#78a8ff", "#00d4b8"],
+  ["#fff1f7", "#ff78b7", "#695cff"],
+  ["#f5ffe6", "#c8ef45", "#00a58f"],
+  ["#eef0ff", "#7f87ff", "#4ee0ff"],
+];
 const birthdaySignals = [
   { name: "Ana", date: "June 4", note: "sister" },
   { name: "Jen", date: "June 18", note: "creative mirror" },
@@ -48,6 +69,28 @@ const birthdaySignals = [
   { name: "Javi", date: "August 9", note: "chosen brother" },
   { name: "Mariuska", date: "September 21", note: "soulful anchor" },
 ];
+
+type BirthdaySignal = (typeof birthdaySignals)[number];
+
+function nextBirthdayTime(dateLabel: string) {
+  const currentYear = new Date().getFullYear();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const parsed = new Date(`${dateLabel}, ${currentYear}`);
+  parsed.setHours(0, 0, 0, 0);
+
+  if (parsed < today) {
+    parsed.setFullYear(currentYear + 1);
+  }
+
+  return parsed.getTime();
+}
+
+function formatBirthdayDate(dateValue: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric" }).format(new Date(`${dateValue}T00:00:00`));
+}
+
 const receivedSignals: Signal[] = [
   {
     id: "r1",
@@ -122,6 +165,19 @@ function entityVariant(name: string) {
   return "person";
 }
 
+function slugify(value: string) {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function initialsForName(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "PS";
+}
+
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("feed");
   const [signals, setSignals] = useState<Signal[]>(initialSignals);
@@ -130,6 +186,9 @@ export default function Home() {
   const [lastSignal, setLastSignal] = useState<Signal | null>(null);
   const [isReleasing, setIsReleasing] = useState(false);
   const [personBack, setPersonBack] = useState<Screen>("people");
+  const [addedRecipients, setAddedRecipients] = useState<Recipient[]>([]);
+  const [selectedPulseIndex, setSelectedPulseIndex] = useState(0);
+  const allRecipients = useMemo(() => [...addedRecipients, ...recipients], [addedRecipients]);
 
   const activeTab: NavTab =
     screen === "feed"
@@ -158,6 +217,7 @@ export default function Home() {
       date: "Today",
       kind: recipient.isGroup ? "daily" : "instant",
       color: recipient.gradient.replace("via-[#f4d7ff] ", ""),
+      pulsePalette: signalPulsePalettes[selectedPulseIndex],
     };
 
     setSelectedRecipient(recipient);
@@ -169,11 +229,11 @@ export default function Home() {
     if (!lastSignal || isReleasing) return;
 
     setIsReleasing(true);
+    setSignals((current) => [lastSignal, ...current]);
+    setScreen("sent");
     window.setTimeout(() => {
-      setSignals((current) => [lastSignal, ...current]);
       setIsReleasing(false);
-      setScreen("sent");
-    }, 320);
+    }, 760);
   }
 
   return (
@@ -224,13 +284,17 @@ export default function Home() {
               intention={intention}
               setIntention={setIntention}
               selectedRecipient={selectedRecipient}
+              pulseIndex={selectedPulseIndex}
+              setPulseIndex={setSelectedPulseIndex}
               onBack={() => setScreen("feed")}
               onChoose={() => setScreen("recipients")}
+              onNext={() => prepareSignal()}
             />
           )}
 
           {screen === "recipients" && (
             <ChooseRecipient
+              recipientsList={allRecipients}
               selectedRecipient={selectedRecipient}
               isReleasing={isReleasing}
               onBack={() => setScreen("send")}
@@ -253,22 +317,22 @@ export default function Home() {
               signal={lastSignal}
               recipient={selectedRecipient}
               onFeed={() => setScreen("feed")}
-              onView={() => {
-                setPersonBack("signals");
-                setScreen("person");
-              }}
             />
           )}
 
           {screen === "profile" && (
             <UserProfile
               signals={signals}
+              recipientsList={allRecipients}
             />
           )}
 
           {screen === "people" && (
             <PeopleList
+              recipientsList={allRecipients}
               selectedRecipient={selectedRecipient}
+              onAddPerson={() => setScreen("add-person")}
+              onCreateGroup={() => setScreen("create-group")}
               onOpen={(recipient) => {
                 setSelectedRecipient(recipient);
                 setPersonBack("people");
@@ -277,8 +341,30 @@ export default function Home() {
             />
           )}
 
+          {screen === "add-person" && (
+            <AddPersonScreen
+              onBack={() => setScreen("people")}
+              onSave={(recipient) => {
+                setAddedRecipients((current) => [recipient, ...current]);
+                setScreen("people");
+              }}
+            />
+          )}
+
+          {screen === "create-group" && (
+            <CreateGroupScreen
+              recipientsList={allRecipients}
+              onBack={() => setScreen("people")}
+              onSave={(recipient) => {
+                setAddedRecipients((current) => [recipient, ...current]);
+                setScreen("people");
+              }}
+            />
+          )}
+
           {screen === "person" && (
             <PersonProfile
+              recipientsList={allRecipients}
               recipient={selectedRecipient}
               signals={signals}
               onBack={() => setScreen(personBack)}
@@ -291,7 +377,7 @@ export default function Home() {
         </ScreenShell>
 
         {screen !== "launch" && (
-          <div className="fixed inset-x-0 bottom-6 z-20 px-5">
+          <div className="pointer-events-none fixed inset-x-0 bottom-6 z-20 px-5">
             <BottomNav
               active={activeTab}
               onChange={(tab) => {
@@ -304,6 +390,7 @@ export default function Home() {
             />
           </div>
         )}
+        {isReleasing ? <div aria-hidden="true" className="release-white-handoff" /> : null}
       </div>
     </div>
   );
@@ -319,10 +406,9 @@ function TopBar({
   action?: React.ReactNode;
 }) {
   return (
-    <header className="mb-8 flex h-8 items-center justify-between">
-      <span aria-hidden="true" className="w-10" />
+    <header className="relative mb-8 flex h-11 items-center justify-between">
       {onBack ? (
-        <button type="button" onClick={onBack} aria-label="Back" className="icon-button mr-auto">
+        <button type="button" onClick={onBack} aria-label="Back" className="icon-button absolute left-0 top-1/2 -translate-y-1/2">
           <ArrowLeft size={18} />
         </button>
       ) : null}
@@ -331,7 +417,7 @@ function TopBar({
           {title}
         </p>
       ) : null}
-      <div className="ml-auto">{action}</div>
+      <div className="absolute right-0 top-1/2 -translate-y-1/2">{action}</div>
     </header>
   );
 }
@@ -359,38 +445,103 @@ function HomeFeed({
   onViewAll: () => void;
   onOpenSignal: (signal: Signal) => void;
 }) {
+  const [showPeopleDetails, setShowPeopleDetails] = useState(false);
+
   return (
     <section>
-      <TopBar
-        action={
-          <span aria-hidden="true" className="icon-button glow-button">
-            <HomeIcon size={18} />
-          </span>
-        }
-      />
+      <TopBar />
 
       <div className="mb-9">
         <div className="flex items-start gap-2">
           <h1 className="text-[2.45rem] font-light leading-none tracking-normal text-[#21182e]">Signals</h1>
-          <Sparkles size={16} className="mt-1 text-[#21182e]" />
+          <Sparkles size={16} className="mt-1 fill-[#21182e] text-[#21182e]" />
         </div>
         <p className="mt-1 text-sm text-[#51425a]">Care. Quietly sent.</p>
       </div>
 
-      <GlassCard className="energy-card p-5">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#382c44]">Your energy balance</p>
-        <div className="mt-6 grid grid-cols-[1fr_auto_1fr] items-center gap-5">
-          <div>
-            <Infinity size={64} strokeWidth={1.55} className="text-[#cf7fb0] drop-shadow-[0_0_14px_rgba(255,226,203,0.95)]" />
-            <p className="mt-5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#41324b]">Unlimited</p>
+      <GlassCard className="energy-card people-today-card">
+        <button type="button" onClick={() => setShowPeopleDetails((current) => !current)} className="people-today-main people-today-trigger">
+          <div className="people-today-copy">
+            <p className="people-today-kicker">Your people today</p>
+            <h2>Quiet but connected</h2>
+            <p>Your circle feels calm tonight.</p>
           </div>
-          <div className="h-24 w-px bg-[#927a92]/25" />
-          <div className="space-y-3 text-[0.67rem] font-semibold uppercase leading-5 tracking-[0.14em] text-[#403247]">
-            <p>Good energy</p>
-            <p>Doesn't run out.</p>
-            <p>Keep sending it.</p>
+          <div className="people-today-orbit" aria-hidden="true">
+            <span className="people-orbit-ring people-orbit-ring-outer" />
+            <span className="people-orbit-ring people-orbit-ring-inner" />
+            {Array.from({ length: 10 }).map((_, index) => (
+              <span
+                key={index}
+                className="people-orbit-dot"
+                style={{ "--dot-index": index, "--dot-radius": `${index % 2 === 0 ? 3.9 : 5.15}rem` } as CSSProperties}
+              />
+            ))}
+            <span
+              className="people-orbit-core"
+              style={
+                {
+                  "--pulse-1": signalPulsePalettes[0][0],
+                  "--pulse-2": signalPulsePalettes[0][1],
+                  "--pulse-3": signalPulsePalettes[0][2],
+                } as CSSProperties
+              }
+            >
+              <UsersRound size={34} strokeWidth={1.7} />
+            </span>
           </div>
-        </div>
+        </button>
+        {!showPeopleDetails ? (
+          <button type="button" onClick={() => setShowPeopleDetails(true)} className="people-today-more">
+            <span>See more</span>
+            <ChevronRight size={15} />
+          </button>
+        ) : null}
+        <AnimatePresence initial={false}>
+          {showPeopleDetails ? (
+            <motion.div
+              className="people-today-stats"
+              initial={{ height: 0, opacity: 0, y: -8 }}
+              animate={{ height: "auto", opacity: 1, y: 0 }}
+              exit={{ height: 0, opacity: 0, y: -8 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <div>
+                <span className="people-stat-icon people-stat-heart">
+                  <Heart size={17} strokeWidth={1.8} />
+                </span>
+                <p>
+                  <strong>5 people</strong>
+                  <span>feeling supported</span>
+                  <em>Jen, Ana, Mira, Jo, Martin</em>
+                </p>
+              </div>
+              <div>
+                <span className="people-stat-icon people-stat-pulse">
+                  <Activity size={17} strokeWidth={1.8} />
+                </span>
+                <p>
+                  <strong>2 might need</strong>
+                  <span>your signal</span>
+                  <em>Edu, Sol</em>
+                </p>
+              </div>
+              <div>
+                <span className="people-stat-icon people-stat-spark">
+                  <Sparkles size={17} strokeWidth={1.8} />
+                </span>
+                <p>
+                  <strong>3 signals sent</strong>
+                  <span>today</span>
+                  <em>Jen, Ana, Friends & Family</em>
+                </p>
+              </div>
+              <button type="button" onClick={() => setShowPeopleDetails(false)} className="people-today-more people-today-less">
+                <span>See less</span>
+                <ChevronRight size={15} />
+              </button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </GlassCard>
 
       <div className="mb-4 mt-7 flex items-center justify-between">
@@ -401,7 +552,7 @@ function HomeFeed({
         </button>
       </div>
 
-      <div className="signal-list overflow-hidden rounded-[1.45rem]">
+      <div className="signal-list home-recent-list overflow-hidden rounded-[1.45rem]">
         {signals.slice(0, 3).map((signal) => (
           <SignalRow key={signal.id} signal={signal} onClick={() => onOpenSignal(signal)} />
         ))}
@@ -449,14 +600,7 @@ function SignalsHistory({
   return (
     <section className="signals-history-screen">
       <div className="signals-history-head">
-        <TopBar
-          title="Signals"
-          action={
-            <span aria-hidden="true" className="icon-button glow-button">
-              <Radio size={18} />
-            </span>
-          }
-        />
+        <TopBar title="Signals" />
 
         <div className="mb-7">
           <h1 className="text-[2.2rem] font-light leading-none text-[#21182e]">Signal history</h1>
@@ -467,7 +611,7 @@ function SignalsHistory({
           </p>
         </div>
 
-        <div className="history-toggle">
+        <div className="history-toggle" style={{ "--history-pill-x": mode === "received" ? "calc(100% + 0.45rem)" : "0%" } as CSSProperties}>
           <button type="button" onClick={() => setMode("sent")} className={mode === "sent" ? "history-toggle-active" : ""}>
             <span>Sent</span>
           </button>
@@ -477,7 +621,7 @@ function SignalsHistory({
         </div>
       </div>
 
-      <div className="signal-list signals-history-list overflow-hidden rounded-[1.45rem]">
+      <div className="signal-list signals-history-list">
         {visibleSignals.map((signal) => (
           <SignalRow key={signal.id} signal={signal} direction={mode} onClick={() => onOpenSignal(signal)} />
         ))}
@@ -487,34 +631,44 @@ function SignalsHistory({
 }
 
 function PeopleList({
+  recipientsList,
   selectedRecipient,
+  onAddPerson,
+  onCreateGroup,
   onOpen,
 }: {
+  recipientsList: Recipient[];
   selectedRecipient: Recipient;
+  onAddPerson: () => void;
+  onCreateGroup: () => void;
   onOpen: (recipient: Recipient) => void;
 }) {
   const [query, setQuery] = useState("");
-  const filteredRecipients = recipients.filter((recipient) =>
+  const filteredRecipients = recipientsList.filter((recipient) =>
     `${recipient.name} ${recipient.relationship} ${recipient.aura}`.toLowerCase().includes(query.toLowerCase()),
   );
 
   return (
     <section>
-      <TopBar
-        title="People"
-        action={
-          <span aria-hidden="true" className="icon-button glow-button">
-            <UsersRound size={18} />
-          </span>
-        }
-      />
+      <TopBar title="People" />
 
       <div className="mb-7">
         <h1 className="text-[2.2rem] font-light leading-none text-[#21182e]">Your people</h1>
         <p className="mt-2 text-sm leading-6 text-[#5f5264]">The small circle you send care to most often.</p>
       </div>
 
-      <button type="button" onClick={() => onOpen(groupRecipient)} className="create-group-card mb-5">
+      <button type="button" onClick={onAddPerson} className="create-group-card mb-3">
+        <span className="grid h-12 w-12 place-items-center rounded-full bg-white/45 text-[#4f3b75]">
+          <UserRound size={21} />
+        </span>
+        <span className="min-w-0 flex-1 text-left">
+          <span className="block text-sm font-semibold text-[#2d2337]">Add person</span>
+          <span className="mt-1 block text-xs text-[#746779]">Someone new to care for</span>
+        </span>
+        <ArrowRight size={18} className="text-[#6c5c75]" />
+      </button>
+
+      <button type="button" onClick={onCreateGroup} className="create-group-card mb-5">
         <span className="grid h-12 w-12 place-items-center rounded-full bg-white/45 text-[#4f3b75]">
           <Plus size={22} />
         </span>
@@ -565,10 +719,197 @@ function PeopleList({
   );
 }
 
-function UserProfile({ signals }: { signals: Signal[] }) {
+function AddPersonScreen({ onBack, onSave }: { onBack: () => void; onSave: (recipient: Recipient) => void }) {
+  const [name, setName] = useState("");
+  const [relationship, setRelationship] = useState("");
+  const [aura, setAura] = useState("");
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = name.trim();
+    const trimmedRelationship = relationship.trim();
+    const trimmedAura = aura.trim();
+
+    if (!trimmedName || !trimmedRelationship) return;
+
+    onSave({
+      id: `${slugify(trimmedName)}-${Date.now()}`,
+      name: trimmedName,
+      relationship: trimmedRelationship,
+      aura: trimmedAura || "Ready for a thoughtful signal",
+      initials: initialsForName(trimmedName),
+      gradient: personGradients[Date.now() % personGradients.length] ?? personGradients[0],
+      signals: 0,
+      connection: trimmedRelationship,
+    });
+  }
+
+  return (
+    <section>
+      <TopBar title="Add person" onBack={onBack} />
+
+      <div className="mb-8">
+        <h1 className="text-[2.2rem] font-light leading-none text-[#21182e]">New person</h1>
+        <p className="mt-3 text-sm leading-6 text-[#62546a]">Add someone to your care circle.</p>
+      </div>
+
+      <GlassCard className="p-5">
+        <form onSubmit={handleSubmit} className="people-form">
+          <label>
+            <span>Name</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Example: Laura" autoFocus />
+          </label>
+          <label>
+            <span>Relationship</span>
+            <input value={relationship} onChange={(event) => setRelationship(event.target.value)} placeholder="Example: close friend" />
+          </label>
+          <label>
+            <span>Care note</span>
+            <input value={aura} onChange={(event) => setAura(event.target.value)} placeholder="Example: Needs a soft check-in" />
+          </label>
+          <button type="submit" className="primary-button mt-2" disabled={!name.trim() || !relationship.trim()}>
+            Add person
+            <Plus size={18} />
+          </button>
+        </form>
+      </GlassCard>
+    </section>
+  );
+}
+
+function CreateGroupScreen({
+  recipientsList,
+  onBack,
+  onSave,
+}: {
+  recipientsList: Recipient[];
+  onBack: () => void;
+  onSave: (recipient: Recipient) => void;
+}) {
+  const [name, setName] = useState("");
+  const [memberQuery, setMemberQuery] = useState("");
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [purpose, setPurpose] = useState("");
+  const contactOptions = recipientsList.filter((recipient) => !recipient.isGroup);
+  const filteredContacts = contactOptions.filter((recipient) =>
+    `${recipient.name} ${recipient.relationship}`.toLowerCase().includes(memberQuery.toLowerCase()),
+  );
+  const selectedMembers = selectedMemberIds
+    .map((id) => contactOptions.find((recipient) => recipient.id === id))
+    .filter((recipient): recipient is Recipient => Boolean(recipient));
+  const pulseSize = Math.min(172, 76 + selectedMembers.length * 16);
+
+  function toggleMember(memberId: string) {
+    setSelectedMemberIds((current) =>
+      current.includes(memberId) ? current.filter((id) => id !== memberId) : [...current, memberId],
+    );
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = name.trim();
+    const memberList = selectedMembers.map((member) => member.name);
+
+    if (!trimmedName || memberList.length === 0) return;
+
+    onSave({
+      id: `${slugify(trimmedName)}-${Date.now()}`,
+      name: trimmedName,
+      relationship: "care group",
+      aura: purpose.trim() || "A shared circle for small signals",
+      initials: initialsForName(trimmedName),
+      gradient: groupGradient,
+      signals: 0,
+      connection: `group of ${memberList.length} people`,
+      isGroup: true,
+      members: memberList,
+    });
+  }
+
+  return (
+    <section>
+      <TopBar title="Create group" onBack={onBack} />
+
+      <div className="mb-8">
+        <h1 className="text-[2.2rem] font-light leading-none text-[#21182e]">New group</h1>
+        <p className="mt-3 text-sm leading-6 text-[#62546a]">Create a shared signal circle.</p>
+      </div>
+
+      <GlassCard className="p-5">
+        <form onSubmit={handleSubmit} className="people-form">
+          <label>
+            <span>Group name</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Example: Studio crew" autoFocus />
+          </label>
+          <div className="group-member-picker">
+            <span className="group-member-label">Members</span>
+            <label className="group-member-search">
+              <input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="Search name" aria-label="Search members" />
+            </label>
+            <div className="group-member-list">
+              {filteredContacts.map((recipient) => {
+                const selected = selectedMemberIds.includes(recipient.id);
+
+                return (
+                  <button type="button" key={recipient.id} onClick={() => toggleMember(recipient.id)} className="group-member-row">
+                    <StarTile
+                      variant={recipient.name === mostConnectedName ? "favorite" : "person"}
+                      className={`h-10 w-10 rounded-full ${recipient.id === "jo" || recipient.id === "martin" ? "night-tile" : ""}`}
+                    />
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="block text-sm font-semibold text-[#2d2337]">{recipient.name}</span>
+                      <span className="mt-0.5 block truncate text-xs text-[#8a7a8e]">{recipient.relationship}</span>
+                    </span>
+                    <span className={`member-check ${selected ? "member-check-active" : ""}`}>{selected ? <Check size={14} /> : null}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <label>
+            <span>Purpose</span>
+            <input value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder="Example: A quiet build circle" />
+          </label>
+          <div className="group-orbit-preview" style={{ "--pulse-size": `${pulseSize}px` } as CSSProperties}>
+            <span className="group-orbit-pulse" />
+            {selectedMembers.map((member, index) => {
+              const angle = selectedMembers.length === 1 ? -90 : (360 / selectedMembers.length) * index - 90;
+              const radius = Math.min(84, 34 + selectedMembers.length * 6);
+
+              return (
+                <span
+                  key={member.id}
+                  className="group-orbit-avatar"
+                  style={{ transform: `translate(-50%, -50%) rotate(${angle}deg) translate(${radius}px) rotate(${-angle}deg)` }}
+                >
+                  <StarTile
+                    variant={member.name === mostConnectedName ? "favorite" : "person"}
+                    className={`h-10 w-10 rounded-full ${member.id === "jo" || member.id === "martin" ? "night-tile" : ""}`}
+                  />
+                </span>
+              );
+            })}
+            <span className="group-orbit-count">{selectedMembers.length || "0"} selected</span>
+          </div>
+          <button type="submit" className="primary-button mt-2" disabled={!name.trim() || selectedMembers.length === 0}>
+            Create group
+            <Plus size={18} />
+          </button>
+        </form>
+      </GlassCard>
+    </section>
+  );
+}
+
+function UserProfile({ signals, recipientsList }: { signals: Signal[]; recipientsList: Recipient[] }) {
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);
   const [showAllBirthdays, setShowAllBirthdays] = useState(false);
-  const profileGroups = recipients
+  const [birthdayItems, setBirthdayItems] = useState<BirthdaySignal[]>(birthdaySignals);
+  const [isAddingBirthday, setIsAddingBirthday] = useState(false);
+  const [birthdayName, setBirthdayName] = useState("");
+  const [birthdayNote, setBirthdayNote] = useState("");
+  const [birthdayDate, setBirthdayDate] = useState("");
+  const profileGroups = recipientsList
     .filter((recipient) => recipient.isGroup)
     .map((recipient) => ({
       ...recipient,
@@ -582,17 +923,71 @@ function UserProfile({ signals }: { signals: Signal[] }) {
     }, {});
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Jen";
   }, [signals]);
+  const orderedBirthdays = useMemo(
+    () => [...birthdayItems].sort((a, b) => nextBirthdayTime(a.date) - nextBirthdayTime(b.date)),
+    [birthdayItems],
+  );
+  const birthdayPreview = `${orderedBirthdays.slice(0, 3).map((birthday) => birthday.name).join(", ")}...`;
+
+  function handleBirthdaySubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = birthdayName.trim();
+    const trimmedNote = birthdayNote.trim();
+
+    if (!trimmedName || !birthdayDate) return;
+
+    setBirthdayItems((current) => [
+      ...current,
+      {
+        name: trimmedName,
+        date: formatBirthdayDate(birthdayDate),
+        note: trimmedNote || "birthday signal",
+      },
+    ]);
+    setBirthdayName("");
+    setBirthdayNote("");
+    setBirthdayDate("");
+    setShowAllBirthdays(true);
+    setIsAddingBirthday(false);
+  }
+
+  if (isAddingBirthday) {
+    return (
+      <section>
+        <TopBar title="Add birthday" onBack={() => setIsAddingBirthday(false)} />
+
+        <div className="mb-8">
+          <h1 className="text-[2.2rem] font-light leading-none text-[#21182e]">New birthday</h1>
+          <p className="mt-3 text-sm leading-6 text-[#62546a]">Add someone to your birthday signals list.</p>
+        </div>
+
+        <GlassCard className="p-5">
+          <form onSubmit={handleBirthdaySubmit} className="birthday-form">
+            <label>
+              <span>Name</span>
+              <input value={birthdayName} onChange={(event) => setBirthdayName(event.target.value)} placeholder="Example: Laura" autoFocus />
+            </label>
+            <label>
+              <span>Relationship</span>
+              <input value={birthdayNote} onChange={(event) => setBirthdayNote(event.target.value)} placeholder="Example: close friend" />
+            </label>
+            <label>
+              <span>Birthday</span>
+              <input type="date" value={birthdayDate} onChange={(event) => setBirthdayDate(event.target.value)} />
+            </label>
+            <button type="submit" className="primary-button mt-2" disabled={!birthdayName.trim() || !birthdayDate}>
+              Add birthday
+              <Plus size={18} />
+            </button>
+          </form>
+        </GlassCard>
+      </section>
+    );
+  }
 
   return (
     <section>
-      <TopBar
-        title="Profile"
-        action={
-          <span aria-hidden="true" className="icon-button glow-button">
-            <UserRound size={18} />
-          </span>
-        }
-      />
+      <TopBar title="Profile" />
 
       <div className="mb-8 flex items-center gap-5">
         <div className="grid h-24 w-24 place-items-center rounded-[2rem] bg-[radial-gradient(circle_at_35%_30%,#fff7dc_0%,#ffc8dd_34%,#ad91df_72%,#55418d_100%)] text-2xl font-light text-white shadow-[0_18px_50px_rgba(95,70,130,0.24)]">
@@ -605,25 +1000,13 @@ function UserProfile({ signals }: { signals: Signal[] }) {
         </div>
       </div>
 
-      <GlassCard className="mb-5 p-5">
-        <div className="flex items-center gap-4">
-          <div className="grid h-12 w-12 place-items-center rounded-full bg-white/45 text-[#644c83]">
-            <Heart size={21} />
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-[#89798e]">Current intention</p>
-            <p className="mt-1 text-xl font-light text-[#2a2035]">gentle boosts, steady courage, and soft check-ins</p>
-          </div>
-        </div>
-      </GlassCard>
-
       <div className="mb-5 grid grid-cols-3 gap-3">
         <GlassCard className="p-4 text-center">
           <p className="text-2xl font-light text-[#2d2238]">{signals.length}</p>
           <p className="mt-1 text-[0.56rem] font-semibold uppercase tracking-[0.15em] text-[#86768c]">Sent</p>
         </GlassCard>
         <GlassCard className="p-4 text-center">
-          <p className="text-2xl font-light text-[#2d2238]">{recipients.length}</p>
+          <p className="text-2xl font-light text-[#2d2238]">{recipientsList.length}</p>
           <p className="mt-1 text-[0.56rem] font-semibold uppercase tracking-[0.15em] text-[#86768c]">People</p>
         </GlassCard>
         <GlassCard className="p-4 text-center">
@@ -633,9 +1016,17 @@ function UserProfile({ signals }: { signals: Signal[] }) {
       </div>
 
       <GlassCard className="mb-5 p-5">
-        <p className="text-xs uppercase tracking-[0.18em] text-[#89798e]">Care pattern</p>
-        <div className="mt-4 space-y-4">
-          <div>
+        <div className="profile-card-head">
+          <span className="profile-card-icon">
+            <Heart size={21} />
+          </span>
+          <span>
+            <span className="profile-card-kicker">Care pattern</span>
+            <span className="profile-card-subtitle">How your recent signals feel.</span>
+          </span>
+        </div>
+        <div className="mt-5 space-y-4">
+          <div className="profile-metric-row">
             <div className="mb-2 flex justify-between text-sm text-[#372b42]">
               <span>Soft support</span>
               <span>72%</span>
@@ -644,7 +1035,7 @@ function UserProfile({ signals }: { signals: Signal[] }) {
               <div className="h-full w-[72%] rounded-full bg-[#7551c7]" />
             </div>
           </div>
-          <div>
+          <div className="profile-metric-row">
             <div className="mb-2 flex justify-between text-sm text-[#372b42]">
               <span>Night signals</span>
               <span>40%</span>
@@ -657,13 +1048,13 @@ function UserProfile({ signals }: { signals: Signal[] }) {
       </GlassCard>
 
       <GlassCard className="mb-5 p-5">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-[#89798e]">Groups</p>
-            <p className="mt-1 text-2xl font-light text-[#2a2035]">{profileGroups.length}</p>
-          </div>
-          <span className="grid h-12 w-12 place-items-center rounded-full bg-[#d9fff3]/55 text-[#4d3478]">
+        <div className="profile-card-head mb-5">
+          <span className="profile-card-icon">
             <UsersRound size={21} />
+          </span>
+          <span>
+            <span className="profile-card-kicker">Groups</span>
+            <span className="profile-card-title">{profileGroups.length}</span>
           </span>
         </div>
         <div className="space-y-3">
@@ -681,13 +1072,21 @@ function UserProfile({ signals }: { signals: Signal[] }) {
                 <span className="min-w-0 flex-1 text-left">
                   <span className="block text-sm font-semibold text-[#2d2337]">{group.name}</span>
                   <span className="mt-1 block text-xs text-[#746779]">Added by {group.addedBy}</span>
-                  {expanded ? (
-                    <span className="mt-3 block text-xs leading-5 text-[#62546a]">
-                      Admin: {group.admin}
-                      <br />
-                      Members: {group.members?.join(", ")}
-                    </span>
-                  ) : null}
+                  <AnimatePresence initial={false}>
+                    {expanded ? (
+                      <motion.span
+                        className="mt-3 block overflow-hidden text-xs leading-5 text-[#62546a]"
+                        initial={{ height: 0, opacity: 0, y: -4 }}
+                        animate={{ height: "auto", opacity: 1, y: 0 }}
+                        exit={{ height: 0, opacity: 0, y: -4 }}
+                        transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                      >
+                        Admin: {group.admin}
+                        <br />
+                        Members: {group.members?.join(", ")}
+                      </motion.span>
+                    ) : null}
+                  </AnimatePresence>
                 </span>
                 <ChevronRight size={17} className={`text-[#6c5c75] transition ${expanded ? "rotate-90" : ""}`} />
               </button>
@@ -697,42 +1096,57 @@ function UserProfile({ signals }: { signals: Signal[] }) {
       </GlassCard>
 
       <GlassCard className="mb-5 p-5">
-        <div className="flex items-center gap-3">
+        <div className="profile-card-head">
           <StarTile variant="favorite" className="h-12 w-12 rounded-full" />
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-[#89798e]">Most connected</p>
-            <p className="mt-1 text-2xl font-light text-[#2a2035]">{favoritePerson}</p>
-          </div>
+          <span>
+            <span className="profile-card-kicker">Most connected</span>
+            <span className="profile-card-title">{favoritePerson}</span>
+          </span>
         </div>
-        <p className="mt-2 text-sm leading-6 text-[#6f6172]">
+        <p className="mt-4 text-sm leading-6 text-[#6f6172]">
           You and Jen trade steady little boosts: practical reassurance, late-night softness, and tiny sparks of "you got this" when one of you is carrying a lot.
         </p>
       </GlassCard>
 
       <GlassCard className="p-5">
         <button type="button" onClick={() => setShowAllBirthdays((current) => !current)} className="profile-birthday-card">
-          <span className="birthday-icon">
+          <span className="profile-card-icon birthday-icon">
             <Cake size={22} />
           </span>
           <span className="min-w-0 flex-1 text-left">
-            <span className="block text-xs uppercase tracking-[0.18em] text-[#89798e]">Birthday signals</span>
-            <span className="mt-1 block text-sm text-[#62546a]">Upcoming birthdays</span>
+            <span className="profile-card-kicker">Birthday signals</span>
+            <span className="profile-card-title birthday-preview">{birthdayPreview}</span>
           </span>
           <ChevronRight size={17} className={`text-[#6c5c75] transition ${showAllBirthdays ? "rotate-90" : ""}`} />
         </button>
-        {showAllBirthdays ? (
-          <div className="mt-4 space-y-2">
-            {birthdaySignals.map((birthday) => (
-              <div key={birthday.name} className="birthday-row">
+        <AnimatePresence initial={false}>
+          {showAllBirthdays ? (
+            <motion.div
+              className="mt-4 space-y-2 overflow-hidden"
+              initial={{ height: 0, opacity: 0, y: -6 }}
+              animate={{ height: "auto", opacity: 1, y: 0 }}
+              exit={{ height: 0, opacity: 0, y: -6 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {orderedBirthdays.map((birthday) => (
+                <div key={birthday.name} className="birthday-row">
+                  <span>
+                    <span className="block text-sm font-semibold text-[#2d2337]">{birthday.name}</span>
+                    <span className="mt-0.5 block text-xs text-[#8a7a8e]">{birthday.note}</span>
+                  </span>
+                  <span className="text-sm font-medium text-[#5d4a75]">{birthday.date}</span>
+                </div>
+              ))}
+              <button type="button" onClick={() => setIsAddingBirthday(true)} className="birthday-row birthday-add-row">
                 <span>
-                  <span className="block text-sm font-semibold text-[#2d2337]">{birthday.name}</span>
-                  <span className="mt-0.5 block text-xs text-[#8a7a8e]">{birthday.note}</span>
+                  <span className="block text-sm font-semibold text-[#2d2337]">Add birthday</span>
+                  <span className="mt-0.5 block text-xs text-[#8a7a8e]">Keep the care calendar growing</span>
                 </span>
-                <span className="text-sm font-medium text-[#5d4a75]">{birthday.date}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
+                <Plus size={17} className="text-[#5d4a75]" />
+              </button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </GlassCard>
 
     </section>
@@ -743,24 +1157,96 @@ function SendSignal({
   intention,
   setIntention,
   selectedRecipient,
+  pulseIndex,
+  setPulseIndex,
   onBack,
   onChoose,
+  onNext,
 }: {
   intention: string;
   setIntention: (value: string) => void;
   selectedRecipient: Recipient;
+  pulseIndex: number;
+  setPulseIndex: (value: number) => void;
   onBack: () => void;
   onChoose: () => void;
+  onNext: () => void;
 }) {
   const remaining = Math.max(0, 120 - intention.length);
+  const pulseCarouselRef = useRef<HTMLDivElement | null>(null);
+  const activePulse = signalPulsePalettes[pulseIndex % signalPulsePalettes.length] ?? signalPulsePalettes[0];
+
+  function updatePulseScales() {
+    const node = pulseCarouselRef.current;
+    if (!node) return;
+
+    const center = node.scrollLeft + node.clientWidth / 2;
+    Array.from(node.querySelectorAll<HTMLElement>(".send-pulse-core")).forEach((pulse) => {
+      const slide = pulse.parentElement;
+      if (!slide) return;
+      const slideCenter = slide.offsetLeft + slide.offsetWidth / 2;
+      const distance = Math.min(1, Math.abs(center - slideCenter) / Math.max(1, node.clientWidth * 0.36));
+      pulse.style.setProperty("--pulse-scale", `${1 - distance * 0.5}`);
+      pulse.style.setProperty("--pulse-opacity", `${1 - distance * 0.76}`);
+      pulse.style.setProperty("--pulse-blur", `${8 + distance * 14}px`);
+    });
+  }
+
+  function handlePulseScroll() {
+    const node = pulseCarouselRef.current;
+    if (!node) return;
+
+    updatePulseScales();
+    const center = node.scrollLeft + node.clientWidth / 2;
+    const slides = Array.from(node.querySelectorAll<HTMLElement>(".send-pulse-slide"));
+    const nextIndex = slides.reduce(
+      (best, slide, index) => {
+        const slideCenter = slide.offsetLeft + slide.offsetWidth / 2;
+        const distance = Math.abs(center - slideCenter);
+        return distance < best.distance ? { index, distance } : best;
+      },
+      { index: pulseIndex, distance: Number.POSITIVE_INFINITY },
+    ).index;
+    setPulseIndex(nextIndex);
+  }
+
+  useEffect(() => {
+    updatePulseScales();
+  }, [pulseIndex]);
 
   return (
     <section>
-      <TopBar title="Send a signal" onBack={onBack} action={<button type="button" className="icon-button glow-button" aria-label="Spark"><Sparkles size={18} /></button>} />
+      <TopBar title="Send a signal" onBack={onBack} />
 
       <div className="relative mb-8 grid place-items-center py-5">
-        <div className="orb-orbit h-64 w-64" />
-        <SignalOrb size="lg" active />
+        <div
+          className="send-pulse-button"
+          style={
+            {
+              "--pulse-1": activePulse[0],
+              "--pulse-2": activePulse[1],
+              "--pulse-3": activePulse[2],
+            } as CSSProperties
+          }
+        >
+          <div className="orb-orbit send-orbit h-64 w-64" />
+          <div ref={pulseCarouselRef} onScroll={handlePulseScroll} className="send-pulse-carousel" aria-label="Signal color options">
+            {signalPulsePalettes.map((palette, index) => (
+              <span key={palette.join("-")} className="send-pulse-slide">
+                <span
+                  className={`send-pulse-core ${index === pulseIndex ? "send-pulse-core-active" : ""}`}
+                  style={
+                    {
+                      "--pulse-1": palette[0],
+                      "--pulse-2": palette[1],
+                      "--pulse-3": palette[2],
+                    } as CSSProperties
+                  }
+                />
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       <label className="mb-3 block text-sm font-medium text-[#30253a]">What's your signal about?</label>
@@ -786,21 +1272,28 @@ function SendSignal({
       </div>
 
       <label className="mb-3 mt-7 block text-sm font-medium text-[#30253a]">Who's it for?</label>
-      <button type="button" onClick={onChoose} className="recipient-select">
-        <span>{selectedRecipient ? selectedRecipient.name : "Choose a person"}</span>
-        <ChevronRight size={17} />
-      </button>
+      <div className="recipient-next-pill">
+        <button type="button" onClick={onChoose} className="recipient-next-name">
+          <span>{selectedRecipient ? selectedRecipient.name : "Choose a person"}</span>
+        </button>
+        <button type="button" onClick={onNext} className="recipient-next-action">
+          <span>Next</span>
+          <ArrowRight size={18} />
+        </button>
+      </div>
     </section>
   );
 }
 
 function ChooseRecipient({
+  recipientsList,
   selectedRecipient,
   isReleasing,
   onBack,
   onSelect,
   onNext,
 }: {
+  recipientsList: Recipient[];
   selectedRecipient: Recipient;
   isReleasing: boolean;
   onBack: () => void;
@@ -808,7 +1301,7 @@ function ChooseRecipient({
   onNext: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const filteredRecipients = recipients.filter((recipient) =>
+  const filteredRecipients = recipientsList.filter((recipient) =>
     `${recipient.name} ${recipient.relationship}`.toLowerCase().includes(query.toLowerCase()),
   );
 
@@ -827,7 +1320,7 @@ function ChooseRecipient({
         )}
       </AnimatePresence>
 
-      <TopBar title="Choose who" onBack={onBack} action={<span aria-hidden="true" className="icon-button glow-button"><Sparkles size={18} /></span>} />
+      <TopBar title="Choose who" onBack={onBack} />
 
       <label className="search-field">
         <Search size={18} />
@@ -895,7 +1388,7 @@ function LaunchSignal({
   useEffect(() => {
     if (!launched) return;
 
-    const timer = window.setTimeout(onComplete, 760);
+    const timer = window.setTimeout(onComplete, 930);
     return () => window.clearTimeout(timer);
   }, [launched, onComplete]);
 
@@ -908,6 +1401,7 @@ function LaunchSignal({
   const coreGlow = 0.7 + progress / 120;
   const coreIntensity = 1 + progress / 230;
   const cueOpacity = launched ? 0 : Math.max(0, 1 - progress / 78);
+  const pulsePalette = signal?.pulsePalette ?? signalPulsePalettes[0];
 
   function updatePower(value: number) {
     if (launched) return;
@@ -941,6 +1435,9 @@ function LaunchSignal({
         "--core-glow": `${coreGlow}`,
         "--core-intensity": `${coreIntensity}`,
         "--cue-opacity": `${cueOpacity}`,
+        "--pulse-1": pulsePalette[0],
+        "--pulse-2": pulsePalette[1],
+        "--pulse-3": pulsePalette[2],
       } as CSSProperties}
     >
       <button type="button" onClick={onBack} aria-label="Back" className="icon-button launch-back">
@@ -1000,19 +1497,24 @@ function SignalSent({
   signal,
   recipient,
   onFeed,
-  onView,
 }: {
   signal: Signal | null;
   recipient: Recipient;
   onFeed: () => void;
-  onView: () => void;
 }) {
-  return (
-    <section className="sent-screen relative flex flex-col text-center">
-      <button type="button" aria-label="New signal" className="icon-button sent-top-action">
-        <Sparkles size={18} />
-      </button>
+  const pulsePalette = signal?.pulsePalette ?? signalPulsePalettes[0];
 
+  return (
+    <section
+      className="sent-screen relative flex flex-col text-center"
+      style={
+        {
+          "--pulse-1": pulsePalette[0],
+          "--pulse-2": pulsePalette[1],
+          "--pulse-3": pulsePalette[2],
+        } as CSSProperties
+      }
+    >
       <div aria-hidden="true" className="sent-pulse-field">
         <div className="sent-pulse">
           <span className="sent-pulse-star">
@@ -1028,16 +1530,12 @@ function SignalSent({
         </h1>
         <p className="sent-recipient-pill mt-7">To {recipient.name}</p>
         <p className="mt-6 text-base text-[#241b2c]">"{signal?.intention ?? "thinking of you"}"</p>
-        <div className="sent-divider" />
-        <p className="text-sm font-medium text-[#817386]">{nowLabel}</p>
+        <p className="mt-5 text-sm font-medium text-[#817386]">{nowLabel}</p>
       </div>
 
-      <button type="button" onClick={onView} className="primary-button mt-7">
-        <span>View signal</span>
+      <button type="button" onClick={onFeed} className="primary-button sent-home-button mt-7">
+        <span>Back to home</span>
         <ArrowRight size={22} />
-      </button>
-      <button type="button" onClick={onFeed} className="mx-auto mt-4 block text-[0.78rem] font-semibold uppercase tracking-[0.3em] text-[#6f5a82]">
-        Back to home
       </button>
     </section>
   );
@@ -1057,24 +1555,57 @@ function AbstractSilhouette() {
 }
 
 function PersonProfile({
+  recipientsList,
   recipient,
   signals,
   onBack,
   onSend,
 }: {
+  recipientsList: Recipient[];
   recipient: Recipient;
   signals: Signal[];
   onBack: () => void;
   onSend: () => void;
 }) {
+  const [tab, setTab] = useState<"history" | "about">("history");
+  const [selectedGroupMemberId, setSelectedGroupMemberId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const isGroup = Boolean(recipient.isGroup);
   const history = useMemo(() => {
     const matching = signals.filter((signal) => signal.recipient === recipient.name);
+    if (isGroup) return matching;
     return matching.length > 0 ? matching : initialSignals.filter((signal) => signal.recipient === profileRecipient.name);
-  }, [recipient.name, signals]);
+  }, [isGroup, recipient.name, signals]);
+  const groupMembers = useMemo(() => {
+    if (!isGroup) return [];
+
+    return (recipient.members ?? []).map((memberName) => {
+      const match = recipientsList.find((item) => item.name === memberName);
+      return match ?? {
+        id: slugify(memberName),
+        name: memberName,
+        relationship: "member",
+        aura: "Part of this care circle",
+        initials: initialsForName(memberName),
+        gradient: personGradients[0],
+        signals: 0,
+        connection: "member",
+      };
+    });
+  }, [isGroup, recipient.members, recipientsList]);
+  const isUserCreatedGroup = /\d{10,}$/.test(recipient.id);
+  const groupAdmin = recipient.id === "brionx" ? "Edu" : isUserCreatedGroup ? "Vicente" : "Jen";
+  const createdAt = isUserCreatedGroup ? "Today" : recipient.id === "brionx" ? "May 30, 2026" : "May 18, 2026";
+  const groupPurpose = recipient.aura;
+  const pulseSize = Math.min(188, 92 + groupMembers.length * 12);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
-    <section>
-      <TopBar onBack={onBack} action={<button type="button" aria-label="People" className="icon-button"><UsersRound size={18} /></button>} />
+    <section className="person-profile-screen">
+      <TopBar onBack={onBack} />
 
       <div className="mb-9 flex items-center gap-5">
         <StarTile variant={recipient.isGroup ? "group" : recipient.name === mostConnectedName ? "favorite" : "person"} className="h-20 w-20" />
@@ -1085,25 +1616,120 @@ function PersonProfile({
         </div>
       </div>
 
-      <div className="mb-7 grid grid-cols-2 border-b border-[#806e82]/18 text-center">
-        <button type="button" className="border-b border-[#34283e] pb-3 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-[#2d2336]">
+      <div className="person-tab-bar mb-7">
+        <button type="button" onClick={() => setTab("history")} className={tab === "history" ? "person-tab-active" : ""}>
           History
         </button>
-        <button type="button" className="pb-3 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-[#65576a]">
+        <button type="button" onClick={() => setTab("about")} className={tab === "about" ? "person-tab-active" : ""}>
           About
         </button>
       </div>
 
-      <div className="profile-history overflow-hidden rounded-[1.45rem] bg-white/24 ring-1 ring-white/45 backdrop-blur-2xl">
-        {history.slice(0, 5).map((signal) => (
-          <SignalRow key={signal.id} signal={signal} />
-        ))}
-      </div>
+      <AnimatePresence mode="wait" initial={false}>
+        {tab === "history" ? (
+          <motion.div
+            key="history"
+            initial={{ opacity: 0, y: 12, filter: "blur(8px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: -10, filter: "blur(8px)" }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="profile-history person-history-list"
+          >
+            {history.map((signal) => (
+              <SignalRow key={signal.id} signal={signal} />
+            ))}
+          </motion.div>
+        ) : (
+          <motion.div
+            key="about"
+            initial={{ opacity: 0, y: 12, filter: "blur(8px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: -10, filter: "blur(8px)" }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="person-about-panel"
+          >
+            {isGroup ? (
+              <>
+                <div className="group-orbit-preview person-group-orbit" style={{ "--pulse-size": `${pulseSize}px` } as CSSProperties}>
+                  <span className="group-orbit-pulse" />
+                  {groupMembers.map((member, index) => {
+                    const angle = groupMembers.length === 1 ? -90 : (360 / groupMembers.length) * index - 90;
+                    const radius = Math.min(94, 40 + groupMembers.length * 5);
 
-      <button type="button" onClick={onSend} className="primary-button mt-10">
-        <span>Send signal to {recipient.name}</span>
-        <ArrowRight size={22} />
-      </button>
+                    return (
+                      <button
+                        type="button"
+                        key={member.id}
+                        className={`group-orbit-avatar ${selectedGroupMemberId === member.id ? "group-orbit-avatar-selected" : ""}`}
+                        onClick={() => setSelectedGroupMemberId((current) => (current === member.id ? null : member.id))}
+                        aria-label={member.name}
+                        style={{ transform: `translate(-50%, -50%) rotate(${angle}deg) translate(${radius}px) rotate(${-angle}deg)` }}
+                      >
+                        <StarTile
+                          variant={member.name === mostConnectedName ? "favorite" : "person"}
+                          className={`h-10 w-10 rounded-full ${member.id === "jo" || member.id === "martin" ? "night-tile" : ""}`}
+                        />
+                        <AnimatePresence>
+                          {selectedGroupMemberId === member.id ? (
+                            <motion.span
+                              className="group-orbit-name"
+                              initial={{ opacity: 0, x: -4, scale: 0.96 }}
+                              animate={{ opacity: 1, x: 0, scale: 1 }}
+                              exit={{ opacity: 0, x: -4, scale: 0.96 }}
+                              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                            >
+                              {member.name}
+                            </motion.span>
+                          ) : null}
+                        </AnimatePresence>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="group-info-card">
+                  <div>
+                    <span>Admin</span>
+                    <strong>{groupAdmin}</strong>
+                  </div>
+                  <div>
+                    <span>Created</span>
+                    <strong>{createdAt}</strong>
+                  </div>
+                  <div>
+                    <span>Members</span>
+                    <strong>{groupMembers.map((member) => member.name).join(", ")}</strong>
+                  </div>
+                  <div>
+                    <span>Purpose</span>
+                    <strong>{groupPurpose}</strong>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="group-info-card">
+                <div>
+                  <span>Relationship</span>
+                  <strong>{recipient.relationship}</strong>
+                </div>
+                <div>
+                  <span>Care note</span>
+                  <strong>{recipient.aura}</strong>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {mounted
+        ? createPortal(
+            <button type="button" onClick={onSend} className="primary-button person-send-floating">
+              <span>Send signal to {recipient.name}</span>
+              <ArrowRight size={22} />
+            </button>,
+            document.body,
+          )
+        : null}
     </section>
   );
 }

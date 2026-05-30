@@ -19,7 +19,7 @@ const items = [
 
 export function BottomNav({ active, onChange }: BottomNavProps) {
   return (
-    <nav className="bottom-nav-shell mx-auto grid w-full max-w-[23.25rem] grid-cols-5">
+    <nav className="bottom-nav-shell pointer-events-auto mx-auto grid w-full max-w-[23.25rem] grid-cols-5">
       {items.map((item) => {
         const Icon = item.icon;
         const isActive = active === item.id;

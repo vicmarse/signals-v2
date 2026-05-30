@@ -18,6 +18,7 @@ export type Signal = {
   tone: string;
   time: string;
   color: string;
+  pulsePalette?: string[];
   kind?: "instant" | "daily";
   date: string;
 };
